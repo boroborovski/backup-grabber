@@ -53,6 +53,7 @@ def init_db():
             username     TEXT NOT NULL,
             remote_paths TEXT NOT NULL,
             schedule     TEXT,
+            keep_last    INTEGER NOT NULL DEFAULT 0,
             created_at   TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS backup_history (
@@ -146,7 +147,34 @@ def run_backup(host_id):
             (datetime.utcnow().isoformat(), total_size, backup_id),
         )
     db.commit()
+
+    # Enforce retention policy
+    keep_last = host["keep_last"]
+    if keep_last and keep_last > 0 and os.path.isdir(host_backup_dir):
+        _enforce_retention(host_backup_dir, keep_last, host_id, db)
+
     db.close()
+
+
+def _enforce_retention(host_backup_dir, keep_last, host_id, db):
+    """Delete oldest backup snapshots beyond the keep_last limit."""
+    snapshots = sorted(
+        [d for d in Path(host_backup_dir).iterdir() if d.is_dir()],
+        key=lambda p: p.name,
+        reverse=True,
+    )
+    to_delete = snapshots[keep_last:]
+    for snap in to_delete:
+        import shutil
+        shutil.rmtree(snap, ignore_errors=True)
+    # Also trim history records beyond the limit
+    if to_delete:
+        db.execute(
+            "DELETE FROM backup_history WHERE host_id = ? AND id NOT IN "
+            "(SELECT id FROM backup_history WHERE host_id = ? ORDER BY started_at DESC LIMIT ?)",
+            (host_id, host_id, keep_last),
+        )
+        db.commit()
 
 
 # ── Scheduler helpers ─────────────────────────────────────────────────
@@ -197,11 +225,12 @@ def create_host():
     host_id = str(uuid.uuid4())
     db = get_db()
     db.execute(
-        "INSERT INTO hosts (id, name, hostname, port, username, remote_paths, schedule, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO hosts (id, name, hostname, port, username, remote_paths, schedule, keep_last, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (host_id, data["name"], data["hostname"], data.get("port", 22),
          data["username"], json.dumps(data["remote_paths"]),
-         data.get("schedule") or None, datetime.utcnow().isoformat()),
+         data.get("schedule") or None, data.get("keep_last", 0),
+         datetime.utcnow().isoformat()),
     )
     db.commit()
     if data.get("schedule"):
@@ -214,10 +243,10 @@ def update_host(host_id):
     data = request.json
     db = get_db()
     db.execute(
-        "UPDATE hosts SET name=?, hostname=?, port=?, username=?, remote_paths=?, schedule=? WHERE id=?",
+        "UPDATE hosts SET name=?, hostname=?, port=?, username=?, remote_paths=?, schedule=?, keep_last=? WHERE id=?",
         (data["name"], data["hostname"], data.get("port", 22),
          data["username"], json.dumps(data["remote_paths"]),
-         data.get("schedule") or None, host_id),
+         data.get("schedule") or None, data.get("keep_last", 0), host_id),
     )
     db.commit()
     _remove_schedule(host_id)

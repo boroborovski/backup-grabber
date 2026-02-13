@@ -97,6 +97,18 @@
         <input type="text" id="host-schedule-custom" placeholder="min hour day month weekday">
         <span class="hint">e.g. 30 1 * * * = daily at 1:30 AM</span>
       </div>
+      <div class="field">
+        <label for="host-keep-last">Retention <span class="hint">how many backups to keep</span></label>
+        <select id="host-keep-last">
+          <option value="0">Keep all</option>
+          <option value="3">Last 3</option>
+          <option value="5">Last 5</option>
+          <option value="7">Last 7</option>
+          <option value="10">Last 10</option>
+          <option value="14">Last 14</option>
+          <option value="30">Last 30</option>
+        </select>
+      </div>
       <div class="dialog-footer">
         <button type="button" class="btn" onclick="document.getElementById('host-dialog').close()">Cancel</button>
         <button type="submit" class="btn btn-primary">Save</button>

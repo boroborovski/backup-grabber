@@ -101,6 +101,7 @@ function renderHosts() {
       <div class="host-meta">
         <span>${esc(h.username)}@${esc(h.hostname)}:${h.port}</span>
         <span>${scheduleLabel(h.schedule)}</span>
+        <span>Keep: ${h.keep_last ? 'last ' + h.keep_last : 'all'}</span>
       </div>
       <div class="tag-paths">
         ${paths.map(p => `<span class="tag">${esc(p)}</span>`).join("")}
@@ -117,6 +118,7 @@ function showHostForm(host) {
   document.getElementById("host-port").value = host ? host.port : 22;
   document.getElementById("host-username").value = host ? host.username : "";
   document.getElementById("host-paths").value = host ? JSON.parse(host.remote_paths).join("\n") : "";
+  document.getElementById("host-keep-last").value = host ? (host.keep_last || 0) : 0;
 
   // Schedule
   const preset = document.getElementById("host-schedule-preset");
@@ -159,6 +161,7 @@ async function saveHost(e) {
     username: document.getElementById("host-username").value,
     remote_paths: paths,
     schedule: getScheduleValue(),
+    keep_last: parseInt(document.getElementById("host-keep-last").value) || 0,
   };
   if (id) {
     await api(`/api/hosts/${id}`, {

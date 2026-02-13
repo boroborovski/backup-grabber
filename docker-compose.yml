@@ -4,8 +4,10 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      - backup-data:/data
+      - ./backups:/data/backups
+      - app-db:/data
+      - ~/.ssh:/root/.ssh:ro
     restart: unless-stopped
 
 volumes:
-  backup-data:
+  app-db:

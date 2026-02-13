@@ -299,6 +299,46 @@ textarea { resize: vertical; }
   opacity: .85;
 }
 
+/* ── Explorer ───────────────────────────────────── */
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: .25rem;
+  margin-bottom: 1rem;
+  font-size: .85rem;
+  flex-wrap: wrap;
+}
+.breadcrumb a {
+  color: var(--accent);
+  text-decoration: none;
+  cursor: pointer;
+}
+.breadcrumb a:hover { text-decoration: underline; }
+.breadcrumb .sep { color: var(--text-muted); }
+
+.file-list { display: flex; flex-direction: column; }
+
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  padding: .6rem .75rem;
+  border-bottom: 1px solid var(--border);
+  font-size: .87rem;
+  cursor: pointer;
+  transition: background .1s;
+}
+.file-row:hover { background: var(--surface); }
+.file-row svg { flex-shrink: 0; color: var(--text-muted); }
+.file-row.dir svg { color: var(--accent); }
+
+.file-name { flex: 1; color: var(--text); }
+.file-detail {
+  color: var(--text-muted);
+  font-size: .8rem;
+  white-space: nowrap;
+}
+
 /* ── Responsive ─────────────────────────────────── */
 @media (max-width: 700px) {
   .sidebar { display: none; }

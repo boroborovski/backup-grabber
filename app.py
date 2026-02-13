@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from flask import Flask, g, jsonify, render_template, request
+from flask import Flask, g, jsonify, render_template, request, send_from_directory
 
 app = Flask(__name__)
 
@@ -291,6 +291,50 @@ def backup_history():
             "ORDER BY started_at DESC LIMIT 100"
         ).fetchall()
     return jsonify([dict(r) for r in rows])
+
+
+# ── API: Browse backups ───────────────────────────────────────────────
+
+@app.route("/api/browse")
+@app.route("/api/browse/<path:subpath>")
+def browse_backups(subpath=""):
+    """List contents of a backup directory. Returns folders and files."""
+    target = Path(BACKUPS_DIR) / subpath
+    # Prevent path traversal
+    try:
+        target.resolve().relative_to(Path(BACKUPS_DIR).resolve())
+    except ValueError:
+        return jsonify({"error": "Invalid path"}), 400
+
+    if not target.exists():
+        return jsonify({"error": "Path not found"}), 404
+
+    if target.is_file():
+        return send_from_directory(target.parent, target.name, as_attachment=True)
+
+    items = []
+    for entry in sorted(target.iterdir(), key=lambda e: (e.is_file(), e.name)):
+        if entry.is_dir():
+            # Count files and total size inside
+            file_count = sum(1 for _ in entry.rglob("*") if _.is_file())
+            dir_size = sum(f.stat().st_size for f in entry.rglob("*") if f.is_file())
+            items.append({
+                "name": entry.name,
+                "type": "dir",
+                "file_count": file_count,
+                "size": dir_size,
+            })
+        else:
+            items.append({
+                "name": entry.name,
+                "type": "file",
+                "size": entry.stat().st_size,
+                "modified": datetime.fromtimestamp(entry.stat().st_mtime).isoformat(),
+            })
+
+    # Build breadcrumb parts
+    parts = [p for p in subpath.split("/") if p] if subpath else []
+    return jsonify({"path": subpath, "breadcrumb": parts, "items": items})
 
 
 # ── Frontend ──────────────────────────────────────────────────────────

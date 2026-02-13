@@ -6,6 +6,7 @@ document.querySelectorAll(".nav-btn").forEach(btn => {
     btn.classList.add("active");
     document.getElementById(btn.dataset.tab).classList.add("active");
     if (btn.dataset.tab === "history") loadHistory();
+    if (btn.dataset.tab === "explorer") browseBackups("");
   });
 });
 
@@ -231,6 +232,59 @@ async function loadHistory() {
         }).join("")}
       </tbody>
     </table>`;
+}
+
+// ── Explorer ─────────────────────────────────────────────────────────
+const ICON_DIR = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
+const ICON_FILE = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+
+async function browseBackups(path) {
+  const data = await api("/api/browse" + (path ? "/" + path : ""));
+  if (data.error) return;
+
+  // Breadcrumb
+  const bc = document.getElementById("breadcrumb");
+  let bcHtml = `<a onclick="browseBackups('')">backups</a>`;
+  let accumulated = "";
+  for (const part of data.breadcrumb) {
+    accumulated += (accumulated ? "/" : "") + part;
+    const p = accumulated;
+    bcHtml += `<span class="sep">/</span><a onclick="browseBackups('${esc(p)}')">${esc(part)}</a>`;
+  }
+  bc.innerHTML = bcHtml;
+
+  // File list
+  const el = document.getElementById("explorer-list");
+  if (!data.items.length) {
+    el.innerHTML = `
+      <div class="empty-state">
+        <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        </svg>
+        <p>This folder is empty.</p>
+      </div>`;
+    return;
+  }
+
+  el.innerHTML = `<div class="file-list">
+    ${data.items.map(item => {
+      const fullPath = data.path ? data.path + "/" + item.name : item.name;
+      if (item.type === "dir") {
+        return `<div class="file-row dir" onclick="browseBackups('${esc(fullPath)}')">
+          ${ICON_DIR}
+          <span class="file-name">${esc(item.name)}</span>
+          <span class="file-detail">${item.file_count} files</span>
+          <span class="file-detail">${formatSize(item.size)}</span>
+        </div>`;
+      } else {
+        return `<a class="file-row" href="/api/browse/${esc(fullPath)}" download>
+          ${ICON_FILE}
+          <span class="file-name">${esc(item.name)}</span>
+          <span class="file-detail">${formatSize(item.size)}</span>
+        </a>`;
+      }
+    }).join("")}
+  </div>`;
 }
 
 // ── Init ─────────────────────────────────────────────────────────────

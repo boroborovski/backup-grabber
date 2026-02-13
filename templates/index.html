@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Backup Grabber</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>Backup Grabber</h1>
+    <nav>
+      <button class="tab active" data-tab="hosts">Hosts</button>
+      <button class="tab" data-tab="keys">SSH Keys</button>
+      <button class="tab" data-tab="history">History</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- Hosts Tab -->
+    <section id="hosts" class="tab-content active">
+      <div class="toolbar">
+        <h2>Remote Hosts</h2>
+        <button class="btn btn-primary" onclick="showHostForm()">+ Add Host</button>
+      </div>
+      <div id="host-list"></div>
+
+      <dialog id="host-dialog">
+        <form id="host-form" onsubmit="saveHost(event)">
+          <h3 id="host-form-title">Add Host</h3>
+          <input type="hidden" id="host-id">
+          <label>Name<input type="text" id="host-name" required placeholder="my-server"></label>
+          <label>Hostname / IP<input type="text" id="host-hostname" required placeholder="192.168.1.10"></label>
+          <div class="row">
+            <label>Port<input type="number" id="host-port" value="22" min="1" max="65535"></label>
+            <label>Username<input type="text" id="host-username" required placeholder="root"></label>
+          </div>
+          <label>Remote Path<input type="text" id="host-remote-path" required placeholder="/var/backups/"></label>
+          <label>SSH Key
+            <select id="host-key"><option value="">None (use agent/password)</option></select>
+          </label>
+          <label>Schedule (cron)
+            <input type="text" id="host-schedule" placeholder="0 2 * * * (daily at 2am)">
+            <small>Format: minute hour day month weekday</small>
+          </label>
+          <div class="dialog-buttons">
+            <button type="button" class="btn" onclick="document.getElementById('host-dialog').close()">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+      </dialog>
+    </section>
+
+    <!-- SSH Keys Tab -->
+    <section id="keys" class="tab-content">
+      <div class="toolbar">
+        <h2>SSH Keys</h2>
+        <button class="btn btn-primary" onclick="document.getElementById('key-dialog').showModal()">+ Upload Key</button>
+      </div>
+      <div id="key-list"></div>
+
+      <dialog id="key-dialog">
+        <form id="key-form" onsubmit="uploadKey(event)">
+          <h3>Upload SSH Key</h3>
+          <label>Label<input type="text" id="key-label" required placeholder="production-key"></label>
+          <label>Private Key File<input type="file" id="key-file" required></label>
+          <div class="dialog-buttons">
+            <button type="button" class="btn" onclick="document.getElementById('key-dialog').close()">Cancel</button>
+            <button type="submit" class="btn btn-primary">Upload</button>
+          </div>
+        </form>
+      </dialog>
+    </section>
+
+    <!-- History Tab -->
+    <section id="history" class="tab-content">
+      <div class="toolbar">
+        <h2>Backup History</h2>
+        <button class="btn" onclick="loadHistory()">Refresh</button>
+      </div>
+      <div id="history-list"></div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

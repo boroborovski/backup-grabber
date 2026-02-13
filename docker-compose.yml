@@ -1,0 +1,11 @@
+services:
+  backup-grabber:
+    build: .
+    ports:
+      - "5000:5000"
+    volumes:
+      - backup-data:/data
+    restart: unless-stopped
+
+volumes:
+  backup-data:

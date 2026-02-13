@@ -1,8 +1,8 @@
 // ── Tab switching ────────────────────────────────────────────────────
-document.querySelectorAll(".tab").forEach(btn => {
+document.querySelectorAll(".nav-btn").forEach(btn => {
   btn.addEventListener("click", () => {
-    document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
-    document.querySelectorAll(".tab-content").forEach(s => s.classList.remove("active"));
+    document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".page").forEach(s => s.classList.remove("active"));
     btn.classList.add("active");
     document.getElementById(btn.dataset.tab).classList.add("active");
     if (btn.dataset.tab === "history") loadHistory();
@@ -16,7 +16,7 @@ async function api(path, opts = {}) {
 }
 
 function formatSize(bytes) {
-  if (!bytes) return "-";
+  if (!bytes) return "--";
   if (bytes < 1024) return bytes + " B";
   if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB";
   if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + " MB";
@@ -24,59 +24,45 @@ function formatSize(bytes) {
 }
 
 function formatDate(iso) {
-  if (!iso) return "-";
+  if (!iso) return "--";
   return new Date(iso + "Z").toLocaleString();
 }
 
-// ── SSH Keys ─────────────────────────────────────────────────────────
-let keysCache = [];
-
-async function loadKeys() {
-  keysCache = await api("/api/keys");
-  renderKeys();
-  populateKeySelect();
+function esc(s) {
+  if (!s) return "";
+  const d = document.createElement("div");
+  d.textContent = s;
+  return d.innerHTML;
 }
 
-function renderKeys() {
-  const el = document.getElementById("key-list");
-  if (!keysCache.length) {
-    el.innerHTML = '<div class="empty">No SSH keys uploaded yet.</div>';
-    return;
+const SCHEDULE_LABELS = {
+  "0 * * * *": "Every hour",
+  "0 */6 * * *": "Every 6 hours",
+  "0 0 * * *": "Daily at midnight",
+  "0 2 * * *": "Daily at 2:00 AM",
+  "0 3 * * 1": "Weekly (Mon 3 AM)",
+  "0 4 1 * *": "Monthly (1st at 4 AM)",
+};
+
+function scheduleLabel(cron) {
+  if (!cron) return "Manual";
+  return SCHEDULE_LABELS[cron] || cron;
+}
+
+// ── Schedule preset toggle ───────────────────────────────────────────
+function onScheduleChange() {
+  const sel = document.getElementById("host-schedule-preset");
+  const custom = document.getElementById("custom-cron-field");
+  custom.style.display = sel.value === "custom" ? "block" : "none";
+  if (sel.value !== "custom") {
+    document.getElementById("host-schedule-custom").value = "";
   }
-  el.innerHTML = keysCache.map(k => `
-    <div class="card">
-      <div class="card-info">
-        <h3>${esc(k.label)}</h3>
-        <p>Added ${formatDate(k.created_at)}</p>
-      </div>
-      <div class="card-actions">
-        <button class="btn btn-danger btn-sm" onclick="deleteKey('${k.id}')">Delete</button>
-      </div>
-    </div>
-  `).join("");
 }
 
-function populateKeySelect() {
-  const sel = document.getElementById("host-key");
-  sel.innerHTML = '<option value="">None (use agent/password)</option>' +
-    keysCache.map(k => `<option value="${k.id}">${esc(k.label)}</option>`).join("");
-}
-
-async function uploadKey(e) {
-  e.preventDefault();
-  const fd = new FormData();
-  fd.append("label", document.getElementById("key-label").value);
-  fd.append("file", document.getElementById("key-file").files[0]);
-  await api("/api/keys", { method: "POST", body: fd });
-  document.getElementById("key-dialog").close();
-  document.getElementById("key-form").reset();
-  loadKeys();
-}
-
-async function deleteKey(id) {
-  if (!confirm("Delete this SSH key?")) return;
-  await api(`/api/keys/${id}`, { method: "DELETE" });
-  loadKeys();
+function getScheduleValue() {
+  const preset = document.getElementById("host-schedule-preset").value;
+  if (preset === "custom") return document.getElementById("host-schedule-custom").value.trim() || null;
+  return preset || null;
 }
 
 // ── Hosts ────────────────────────────────────────────────────────────
@@ -90,22 +76,34 @@ async function loadHosts() {
 function renderHosts() {
   const el = document.getElementById("host-list");
   if (!hostsCache.length) {
-    el.innerHTML = '<div class="empty">No hosts configured. Add one to get started.</div>';
+    el.innerHTML = `
+      <div class="empty-state">
+        <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/>
+          <circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/>
+        </svg>
+        <p>No hosts configured yet. Add one to get started.</p>
+      </div>`;
     return;
   }
   el.innerHTML = hostsCache.map(h => {
-    const keyLabel = keysCache.find(k => k.id === h.ssh_key_id)?.label || "none";
+    const paths = JSON.parse(h.remote_paths);
     return `
-    <div class="card">
-      <div class="card-info">
+    <div class="host-card">
+      <div class="host-card-top">
         <h3>${esc(h.name)}</h3>
-        <p>${esc(h.username)}@${esc(h.hostname)}:${h.port} &mdash; ${esc(h.remote_path)}</p>
-        <p>Key: ${esc(keyLabel)} ${h.schedule ? ' | Schedule: ' + esc(h.schedule) : ''}</p>
+        <div class="host-card-actions">
+          <button class="btn btn-primary btn-sm" onclick="triggerBackup('${h.id}')">Backup Now</button>
+          <button class="btn btn-sm" onclick="editHost('${h.id}')">Edit</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteHost('${h.id}')">Delete</button>
+        </div>
       </div>
-      <div class="card-actions">
-        <button class="btn btn-primary btn-sm" onclick="triggerBackup('${h.id}')">Backup Now</button>
-        <button class="btn btn-sm" onclick="editHost('${h.id}')">Edit</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteHost('${h.id}')">Delete</button>
+      <div class="host-meta">
+        <span>${esc(h.username)}@${esc(h.hostname)}:${h.port}</span>
+        <span>${scheduleLabel(h.schedule)}</span>
+      </div>
+      <div class="tag-paths">
+        ${paths.map(p => `<span class="tag">${esc(p)}</span>`).join("")}
       </div>
     </div>`;
   }).join("");
@@ -118,9 +116,29 @@ function showHostForm(host) {
   document.getElementById("host-hostname").value = host ? host.hostname : "";
   document.getElementById("host-port").value = host ? host.port : 22;
   document.getElementById("host-username").value = host ? host.username : "";
-  document.getElementById("host-remote-path").value = host ? host.remote_path : "";
-  document.getElementById("host-key").value = host ? (host.ssh_key_id || "") : "";
-  document.getElementById("host-schedule").value = host ? (host.schedule || "") : "";
+  document.getElementById("host-paths").value = host ? JSON.parse(host.remote_paths).join("\n") : "";
+
+  // Schedule
+  const preset = document.getElementById("host-schedule-preset");
+  const customField = document.getElementById("custom-cron-field");
+  const customInput = document.getElementById("host-schedule-custom");
+  if (host && host.schedule) {
+    const match = [...preset.options].find(o => o.value === host.schedule);
+    if (match) {
+      preset.value = host.schedule;
+      customField.style.display = "none";
+      customInput.value = "";
+    } else {
+      preset.value = "custom";
+      customField.style.display = "block";
+      customInput.value = host.schedule;
+    }
+  } else {
+    preset.value = "";
+    customField.style.display = "none";
+    customInput.value = "";
+  }
+
   document.getElementById("host-dialog").showModal();
 }
 
@@ -132,14 +150,15 @@ function editHost(id) {
 async function saveHost(e) {
   e.preventDefault();
   const id = document.getElementById("host-id").value;
+  const pathsRaw = document.getElementById("host-paths").value;
+  const paths = pathsRaw.split("\n").map(p => p.trim()).filter(Boolean);
   const data = {
     name: document.getElementById("host-name").value,
     hostname: document.getElementById("host-hostname").value,
     port: parseInt(document.getElementById("host-port").value),
     username: document.getElementById("host-username").value,
-    remote_path: document.getElementById("host-remote-path").value,
-    ssh_key_id: document.getElementById("host-key").value || null,
-    schedule: document.getElementById("host-schedule").value || null,
+    remote_paths: paths,
+    schedule: getScheduleValue(),
   };
   if (id) {
     await api(`/api/hosts/${id}`, {
@@ -165,8 +184,12 @@ async function deleteHost(id) {
 }
 
 async function triggerBackup(id) {
+  const btn = event.target;
+  btn.textContent = "Starting...";
+  btn.disabled = true;
   await api(`/api/backup/${id}`, { method: "POST" });
-  alert("Backup started! Check the History tab for progress.");
+  btn.textContent = "Started";
+  setTimeout(() => { btn.textContent = "Backup Now"; btn.disabled = false; }, 2000);
 }
 
 // ── History ──────────────────────────────────────────────────────────
@@ -174,31 +197,38 @@ async function loadHistory() {
   const rows = await api("/api/history");
   const el = document.getElementById("history-list");
   if (!rows.length) {
-    el.innerHTML = '<div class="empty">No backups yet.</div>';
+    el.innerHTML = `
+      <div class="empty-state">
+        <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+        </svg>
+        <p>No backups yet. Trigger one from the Hosts tab.</p>
+      </div>`;
     return;
   }
-  el.innerHTML = rows.map(r => `
-    <div class="history-row">
-      <div>
-        <strong>${esc(r.host_name)}</strong>
-        <span style="color:#8b949e;margin-left:.5rem">${formatDate(r.started_at)}</span>
-      </div>
-      <div style="display:flex;align-items:center;gap:.75rem">
-        <span style="color:#8b949e">${formatSize(r.size_bytes)}</span>
-        <span class="status-badge status-${r.status}">${r.status}</span>
-      </div>
-    </div>
-    ${r.message ? `<div style="color:#f85149;font-size:.8rem;padding:0 1rem .5rem">${esc(r.message)}</div>` : ''}
-  `).join("");
-}
-
-// ── XSS protection ──────────────────────────────────────────────────
-function esc(s) {
-  if (!s) return "";
-  const d = document.createElement("div");
-  d.textContent = s;
-  return d.innerHTML;
+  el.innerHTML = `
+    <table class="history-table">
+      <thead><tr><th>Host</th><th>Started</th><th>Duration</th><th>Size</th><th>Status</th></tr></thead>
+      <tbody>
+        ${rows.map(r => {
+          let duration = "--";
+          if (r.started_at && r.finished_at) {
+            const sec = Math.round((new Date(r.finished_at + "Z") - new Date(r.started_at + "Z")) / 1000);
+            duration = sec < 60 ? sec + "s" : Math.floor(sec / 60) + "m " + (sec % 60) + "s";
+          }
+          return `
+          <tr>
+            <td style="color:var(--text);font-weight:500">${esc(r.host_name)}</td>
+            <td>${formatDate(r.started_at)}</td>
+            <td>${duration}</td>
+            <td>${formatSize(r.size_bytes)}</td>
+            <td><span class="status status-${r.status}">${r.status}</span></td>
+          </tr>
+          ${r.message ? `<tr><td colspan="5" class="error-msg">${esc(r.message)}</td></tr>` : ""}`;
+        }).join("")}
+      </tbody>
+    </table>`;
 }
 
 // ── Init ─────────────────────────────────────────────────────────────
-loadKeys().then(loadHosts);
+loadHosts();

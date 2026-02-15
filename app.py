@@ -215,7 +215,20 @@ def _remove_schedule(host_id):
 
 @app.route("/api/hosts", methods=["GET"])
 def list_hosts():
-    rows = get_db().execute("SELECT * FROM hosts ORDER BY name").fetchall()
+    rows = get_db().execute("""
+        SELECT h.*,
+               bh.status     AS last_status,
+               bh.started_at AS last_run,
+               bh.size_bytes AS last_size
+        FROM hosts h
+        LEFT JOIN backup_history bh
+               ON bh.id = (
+                   SELECT id FROM backup_history
+                   WHERE host_id = h.id
+                   ORDER BY started_at DESC LIMIT 1
+               )
+        ORDER BY h.name
+    """).fetchall()
     return jsonify([dict(r) for r in rows])
 
 
@@ -265,6 +278,34 @@ def delete_host(host_id):
 
 
 # ── API: Backups ──────────────────────────────────────────────────────
+
+@app.route("/api/test/<host_id>", methods=["POST"])
+def test_connection(host_id):
+    """Quick SSH connectivity check (no backup data transferred)."""
+    host = get_db().execute("SELECT * FROM hosts WHERE id = ?", (host_id,)).fetchone()
+    if not host:
+        return jsonify({"ok": False, "message": "Host not found"}), 404
+    cmd = [
+        "ssh", "-q",
+        "-o", "BatchMode=yes",
+        "-o", "ConnectTimeout=8",
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "UserKnownHostsFile=/dev/null",
+        "-p", str(host["port"]),
+        f"{host['username']}@{host['hostname']}",
+        "echo ok",
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=12)
+        if result.returncode == 0:
+            return jsonify({"ok": True, "message": "Connection successful"})
+        msg = result.stderr.strip()[:300] or "Connection refused or auth failed"
+        return jsonify({"ok": False, "message": msg})
+    except subprocess.TimeoutExpired:
+        return jsonify({"ok": False, "message": "Connection timed out"})
+    except Exception as e:
+        return jsonify({"ok": False, "message": str(e)[:300]})
+
 
 @app.route("/api/backup/<host_id>", methods=["POST"])
 def trigger_backup(host_id):

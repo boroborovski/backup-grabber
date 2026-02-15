@@ -10,10 +10,34 @@ document.querySelectorAll(".nav-btn").forEach(btn => {
   });
 });
 
+// ── Toast notifications ───────────────────────────────────────────────
+function toast(msg, type = "info") {
+  const container = document.getElementById("toast-container");
+  const t = document.createElement("div");
+  t.className = `toast toast-${type}`;
+  t.textContent = msg;
+  container.appendChild(t);
+  requestAnimationFrame(() => t.classList.add("show"));
+  setTimeout(() => {
+    t.classList.remove("show");
+    setTimeout(() => t.remove(), 300);
+  }, 3500);
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────
 async function api(path, opts = {}) {
-  const res = await fetch(path, opts);
-  return res.json();
+  try {
+    const res = await fetch(path, opts);
+    const data = await res.json();
+    if (!res.ok) {
+      toast(data.error || data.message || `Error ${res.status}`, "error");
+      return null;
+    }
+    return data;
+  } catch (e) {
+    toast("Network error – is the server running?", "error");
+    return null;
+  }
 }
 
 function formatSize(bytes) {
@@ -29,6 +53,17 @@ function formatDate(iso) {
   return new Date(iso + "Z").toLocaleString();
 }
 
+function formatRelative(iso) {
+  if (!iso) return null;
+  const diff = Date.now() - new Date(iso + "Z").getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
 function esc(s) {
   if (!s) return "";
   const d = document.createElement("div");
@@ -37,12 +72,12 @@ function esc(s) {
 }
 
 const SCHEDULE_LABELS = {
-  "0 * * * *": "Every hour",
+  "0 * * * *":   "Every hour",
   "0 */6 * * *": "Every 6 hours",
-  "0 0 * * *": "Daily at midnight",
-  "0 2 * * *": "Daily at 2:00 AM",
-  "0 3 * * 1": "Weekly (Mon 3 AM)",
-  "0 4 1 * *": "Monthly (1st at 4 AM)",
+  "0 0 * * *":   "Daily at midnight",
+  "0 2 * * *":   "Daily at 2:00 AM",
+  "0 3 * * 1":   "Weekly (Mon 3 AM)",
+  "0 4 1 * *":   "Monthly (1st at 4 AM)",
 };
 
 function scheduleLabel(cron) {
@@ -66,12 +101,83 @@ function getScheduleValue() {
   return preset || null;
 }
 
+// ── Live polling ─────────────────────────────────────────────────────
+let pollingTimer = null;
+let runningHostIds = new Set();
+
+function startPolling() {
+  if (pollingTimer) return;
+  pollingTimer = setInterval(pollRunning, 3000);
+}
+
+function stopPolling() {
+  if (pollingTimer) {
+    clearInterval(pollingTimer);
+    pollingTimer = null;
+  }
+}
+
+async function pollRunning() {
+  let data;
+  try {
+    const res = await fetch("/api/history");
+    data = await res.json();
+  } catch (_) {
+    return;
+  }
+
+  const stillRunning = new Set(
+    data.filter(r => r.status === "running").map(r => r.host_id)
+  );
+
+  // Detect jobs that just finished
+  let needsHostRefresh = false;
+  for (const id of runningHostIds) {
+    if (!stillRunning.has(id)) {
+      needsHostRefresh = true;
+      const row = data.find(r => r.host_id === id);
+      const name = row?.host_name || id;
+      const status = row?.status;
+      if (status === "success") toast(`✓ Backup finished: ${name}`, "success");
+      else if (status === "failed") toast(`✗ Backup failed: ${name}`, "error");
+    }
+  }
+
+  runningHostIds = stillRunning;
+
+  if (needsHostRefresh) {
+    loadHosts();
+  } else {
+    // Update running badges in-place without a full re-render
+    document.querySelectorAll("[data-running-hostid]").forEach(el => {
+      if (!stillRunning.has(el.dataset.runningHostid)) {
+        loadHosts();
+      }
+    });
+  }
+
+  // Keep history tab live while backups are running
+  if (document.getElementById("history").classList.contains("active")) {
+    loadHistory();
+  }
+
+  if (stillRunning.size === 0) stopPolling();
+}
+
 // ── Hosts ────────────────────────────────────────────────────────────
 let hostsCache = [];
 
 async function loadHosts() {
-  hostsCache = await api("/api/hosts");
+  const data = await api("/api/hosts");
+  if (!data) return;
+  hostsCache = data;
   renderHosts();
+
+  const anyRunning = hostsCache.some(h => h.last_status === "running");
+  if (anyRunning) {
+    runningHostIds = new Set(hostsCache.filter(h => h.last_status === "running").map(h => h.id));
+    startPolling();
+  }
 }
 
 function renderHosts() {
@@ -89,12 +195,37 @@ function renderHosts() {
   }
   el.innerHTML = hostsCache.map(h => {
     const paths = JSON.parse(h.remote_paths);
+    const isRunning = h.last_status === "running";
+
+    let lastBadge = "";
+    if (isRunning) {
+      lastBadge = `<span class="last-run-info" data-running-hostid="${h.id}">
+        <span class="status status-running">
+          <span class="spinner-inline"></span> running
+        </span>
+      </span>`;
+    } else if (h.last_status) {
+      const rel = formatRelative(h.last_run);
+      lastBadge = `<span class="last-run-info">
+        <span class="status status-${h.last_status}">${h.last_status}</span>
+        ${rel ? `<span class="last-run-time">${rel}</span>` : ""}
+      </span>`;
+    } else {
+      lastBadge = `<span class="last-run-info"><span class="never-run">Never backed up</span></span>`;
+    }
+
     return `
-    <div class="host-card">
+    <div class="host-card${isRunning ? " host-card-running" : ""}">
       <div class="host-card-top">
-        <h3>${esc(h.name)}</h3>
+        <div class="host-card-title">
+          <h3>${esc(h.name)}</h3>
+          ${lastBadge}
+        </div>
         <div class="host-card-actions">
-          <button class="btn btn-primary btn-sm" onclick="triggerBackup('${h.id}')">Backup Now</button>
+          <button class="btn btn-primary btn-sm" onclick="triggerBackup(event, '${h.id}')"${isRunning ? " disabled" : ""}>
+            ${isRunning ? '<span class="spinner-inline"></span> Running…' : "Backup Now"}
+          </button>
+          <button class="btn btn-sm btn-test" onclick="testConnection('${h.id}', this)">Test SSH</button>
           <button class="btn btn-sm" onclick="editHost('${h.id}')">Edit</button>
           <button class="btn btn-sm btn-danger" onclick="deleteHost('${h.id}')">Delete</button>
         </div>
@@ -102,13 +233,30 @@ function renderHosts() {
       <div class="host-meta">
         <span>${esc(h.username)}@${esc(h.hostname)}:${h.port}</span>
         <span>${scheduleLabel(h.schedule)}</span>
-        <span>Keep: ${h.keep_last ? 'last ' + h.keep_last : 'all'}</span>
+        <span>Keep: ${h.keep_last ? "last " + h.keep_last : "all"}</span>
+        ${h.last_size ? `<span>${formatSize(h.last_size)}</span>` : ""}
       </div>
       <div class="tag-paths">
         ${paths.map(p => `<span class="tag">${esc(p)}</span>`).join("")}
       </div>
     </div>`;
   }).join("");
+}
+
+// ── Test SSH connection ───────────────────────────────────────────────
+async function testConnection(id, btn) {
+  const orig = btn.textContent;
+  btn.textContent = "Testing…";
+  btn.disabled = true;
+  const data = await api(`/api/test/${id}`, { method: "POST" });
+  btn.textContent = orig;
+  btn.disabled = false;
+  if (!data) return;
+  if (data.ok) {
+    toast("SSH connection successful", "success");
+  } else {
+    toast("Connection failed: " + data.message, "error");
+  }
 }
 
 function showHostForm(host) {
@@ -121,7 +269,6 @@ function showHostForm(host) {
   document.getElementById("host-paths").value = host ? JSON.parse(host.remote_paths).join("\n") : "";
   document.getElementById("host-keep-last").value = host ? (host.keep_last || 0) : 0;
 
-  // Schedule
   const preset = document.getElementById("host-schedule-preset");
   const customField = document.getElementById("custom-cron-field");
   const customInput = document.getElementById("host-schedule-custom");
@@ -153,8 +300,8 @@ function editHost(id) {
 async function saveHost(e) {
   e.preventDefault();
   const id = document.getElementById("host-id").value;
-  const pathsRaw = document.getElementById("host-paths").value;
-  const paths = pathsRaw.split("\n").map(p => p.trim()).filter(Boolean);
+  const paths = document.getElementById("host-paths").value
+    .split("\n").map(p => p.trim()).filter(Boolean);
   const data = {
     name: document.getElementById("host-name").value,
     hostname: document.getElementById("host-hostname").value,
@@ -164,43 +311,45 @@ async function saveHost(e) {
     schedule: getScheduleValue(),
     keep_last: parseInt(document.getElementById("host-keep-last").value) || 0,
   };
-  if (id) {
-    await api(`/api/hosts/${id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
-  } else {
-    await api("/api/hosts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
-  }
+  const result = id
+    ? await api(`/api/hosts/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) })
+    : await api("/api/hosts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+  if (!result) return;
   document.getElementById("host-dialog").close();
+  toast(id ? "Host updated" : "Host added", "success");
   loadHosts();
 }
 
 async function deleteHost(id) {
   if (!confirm("Delete this host and its backup history?")) return;
-  await api(`/api/hosts/${id}`, { method: "DELETE" });
+  const result = await api(`/api/hosts/${id}`, { method: "DELETE" });
+  if (!result) return;
+  toast("Host deleted", "info");
   loadHosts();
 }
 
-async function triggerBackup(id) {
-  const btn = event.target;
-  btn.textContent = "Starting...";
+async function triggerBackup(e, id) {
+  const btn = e.currentTarget;
   btn.disabled = true;
-  await api(`/api/backup/${id}`, { method: "POST" });
-  btn.textContent = "Started";
-  setTimeout(() => { btn.textContent = "Backup Now"; btn.disabled = false; }, 2000);
+  btn.innerHTML = '<span class="spinner-inline"></span> Starting…';
+  const result = await api(`/api/backup/${id}`, { method: "POST" });
+  if (!result) {
+    btn.disabled = false;
+    btn.textContent = "Backup Now";
+    return;
+  }
+  btn.innerHTML = '<span class="spinner-inline"></span> Running…';
+  toast("Backup started", "info");
+  runningHostIds.add(id);
+  startPolling();
 }
 
 // ── History ──────────────────────────────────────────────────────────
 async function loadHistory() {
-  const rows = await api("/api/history");
+  const data = await api("/api/history");
+  if (!data) return;
   const el = document.getElementById("history-list");
-  if (!rows.length) {
+  if (!data.length) {
     el.innerHTML = `
       <div class="empty-state">
         <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -214,11 +363,14 @@ async function loadHistory() {
     <table class="history-table">
       <thead><tr><th>Host</th><th>Started</th><th>Duration</th><th>Size</th><th>Status</th></tr></thead>
       <tbody>
-        ${rows.map(r => {
+        ${data.map(r => {
           let duration = "--";
           if (r.started_at && r.finished_at) {
             const sec = Math.round((new Date(r.finished_at + "Z") - new Date(r.started_at + "Z")) / 1000);
             duration = sec < 60 ? sec + "s" : Math.floor(sec / 60) + "m " + (sec % 60) + "s";
+          } else if (r.status === "running") {
+            const sec = Math.round((Date.now() - new Date(r.started_at + "Z").getTime()) / 1000);
+            duration = `${sec < 60 ? sec + "s" : Math.floor(sec / 60) + "m " + (sec % 60) + "s"} …`;
           }
           return `
           <tr>
@@ -235,14 +387,13 @@ async function loadHistory() {
 }
 
 // ── Explorer ─────────────────────────────────────────────────────────
-const ICON_DIR = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
+const ICON_DIR  = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
 const ICON_FILE = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
 
 async function browseBackups(path) {
   const data = await api("/api/browse" + (path ? "/" + path : ""));
-  if (data.error) return;
+  if (!data || data.error) return;
 
-  // Breadcrumb
   const bc = document.getElementById("breadcrumb");
   let bcHtml = `<a onclick="browseBackups('')">backups</a>`;
   let accumulated = "";
@@ -253,7 +404,6 @@ async function browseBackups(path) {
   }
   bc.innerHTML = bcHtml;
 
-  // File list
   const el = document.getElementById("explorer-list");
   if (!data.items.length) {
     el.innerHTML = `

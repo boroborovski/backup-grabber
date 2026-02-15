@@ -344,3 +344,95 @@ textarea { resize: vertical; }
   .sidebar { display: none; }
   main { margin-left: 0; padding: 1rem; }
 }
+
+/* ── Host card title row ────────────────────────── */
+.host-card-title {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  flex-wrap: wrap;
+}
+
+.last-run-info {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+}
+
+.last-run-time {
+  font-size: .75rem;
+  color: var(--text-muted);
+}
+
+.never-run {
+  font-size: .75rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ── Running card pulse border ──────────────────── */
+@keyframes pulse-border {
+  0%, 100% { border-color: rgba(234,179,8,.3); }
+  50%       { border-color: rgba(234,179,8,.8); }
+}
+
+.host-card-running {
+  animation: pulse-border 2s ease-in-out infinite;
+}
+
+/* ── Test SSH button ────────────────────────────── */
+.btn-test {
+  color: var(--accent);
+}
+.btn-test:hover {
+  background: rgba(99,102,241,.1);
+  border-color: var(--accent);
+}
+
+/* ── Inline spinner ─────────────────────────────── */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.spinner-inline {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+  vertical-align: middle;
+}
+
+/* ── Toast notifications ────────────────────────── */
+#toast-container {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.toast {
+  padding: .65rem 1rem;
+  border-radius: var(--radius-sm);
+  font-size: .875rem;
+  font-weight: 500;
+  max-width: 320px;
+  box-shadow: 0 4px 20px rgba(0,0,0,.4);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity .25s, transform .25s;
+  pointer-events: auto;
+}
+.toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+.toast-info    { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+.toast-success { background: rgba(34,197,94,.15); color: var(--green); border: 1px solid rgba(34,197,94,.3); }
+.toast-error   { background: rgba(239,68,68,.15); color: var(--red); border: 1px solid rgba(239,68,68,.3); }

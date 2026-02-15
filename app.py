@@ -52,6 +52,7 @@ def init_db():
             port         INTEGER NOT NULL DEFAULT 22,
             username     TEXT NOT NULL,
             ssh_key      TEXT NOT NULL DEFAULT '/root/.ssh/id_ed25519',
+            grp          TEXT NOT NULL DEFAULT '',
             remote_paths TEXT NOT NULL,
             schedule     TEXT,
             keep_last    INTEGER NOT NULL DEFAULT 0,
@@ -240,10 +241,11 @@ def create_host():
     host_id = str(uuid.uuid4())
     db = get_db()
     db.execute(
-        "INSERT INTO hosts (id, name, hostname, port, username, ssh_key, remote_paths, schedule, keep_last, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO hosts (id, name, hostname, port, username, ssh_key, grp, remote_paths, schedule, keep_last, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (host_id, data["name"], data["hostname"], data.get("port", 22),
          data["username"], data.get("ssh_key") or "/root/.ssh/id_ed25519",
+         data.get("grp") or "",
          json.dumps(data["remote_paths"]),
          data.get("schedule") or None, data.get("keep_last", 0),
          datetime.utcnow().isoformat()),
@@ -259,9 +261,10 @@ def update_host(host_id):
     data = request.json
     db = get_db()
     db.execute(
-        "UPDATE hosts SET name=?, hostname=?, port=?, username=?, ssh_key=?, remote_paths=?, schedule=?, keep_last=? WHERE id=?",
+        "UPDATE hosts SET name=?, hostname=?, port=?, username=?, ssh_key=?, grp=?, remote_paths=?, schedule=?, keep_last=? WHERE id=?",
         (data["name"], data["hostname"], data.get("port", 22),
          data["username"], data.get("ssh_key") or "/root/.ssh/id_ed25519",
+         data.get("grp") or "",
          json.dumps(data["remote_paths"]),
          data.get("schedule") or None, data.get("keep_last", 0), host_id),
     )
@@ -394,15 +397,18 @@ def index():
 
 init_db()
 
-# Migrate: add ssh_key column to existing databases that predate this field
+# Migrate: add columns to existing databases
 _mdb = sqlite3.connect(DB_PATH)
-try:
-    _mdb.execute("ALTER TABLE hosts ADD COLUMN ssh_key TEXT NOT NULL DEFAULT '/root/.ssh/id_ed25519'")
-    _mdb.commit()
-except sqlite3.OperationalError:
-    pass  # column already exists
-finally:
-    _mdb.close()
+for _sql in [
+    "ALTER TABLE hosts ADD COLUMN ssh_key TEXT NOT NULL DEFAULT '/root/.ssh/id_ed25519'",
+    "ALTER TABLE hosts ADD COLUMN grp TEXT NOT NULL DEFAULT ''",
+]:
+    try:
+        _mdb.execute(_sql)
+        _mdb.commit()
+    except sqlite3.OperationalError:
+        pass
+_mdb.close()
 
 load_schedules()
 

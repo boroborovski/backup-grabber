@@ -51,6 +51,7 @@ def init_db():
             hostname     TEXT NOT NULL,
             port         INTEGER NOT NULL DEFAULT 22,
             username     TEXT NOT NULL,
+            ssh_key      TEXT NOT NULL DEFAULT '/root/.ssh/id_ed25519',
             remote_paths TEXT NOT NULL,
             schedule     TEXT,
             keep_last    INTEGER NOT NULL DEFAULT 0,
@@ -120,7 +121,8 @@ def run_backup(host_id):
             if prev_backups:
                 link_dest_args = ["--link-dest", str(prev_backups[0] / path_label)]
 
-        ssh_args = f"-p {host['port']} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+        key_arg = f" -i {host['ssh_key']}" if host['ssh_key'] else ""
+        ssh_args = f"-p {host['port']}{key_arg} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
         remote = f"{host['username']}@{host['hostname']}:{remote_path}"
         cmd = ["rsync", "-az", "--delete", "-e", f"ssh {ssh_args}"] + link_dest_args + [remote, dest_dir + "/"]
 
@@ -238,10 +240,11 @@ def create_host():
     host_id = str(uuid.uuid4())
     db = get_db()
     db.execute(
-        "INSERT INTO hosts (id, name, hostname, port, username, remote_paths, schedule, keep_last, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO hosts (id, name, hostname, port, username, ssh_key, remote_paths, schedule, keep_last, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (host_id, data["name"], data["hostname"], data.get("port", 22),
-         data["username"], json.dumps(data["remote_paths"]),
+         data["username"], data.get("ssh_key") or "/root/.ssh/id_ed25519",
+         json.dumps(data["remote_paths"]),
          data.get("schedule") or None, data.get("keep_last", 0),
          datetime.utcnow().isoformat()),
     )
@@ -256,9 +259,10 @@ def update_host(host_id):
     data = request.json
     db = get_db()
     db.execute(
-        "UPDATE hosts SET name=?, hostname=?, port=?, username=?, remote_paths=?, schedule=?, keep_last=? WHERE id=?",
+        "UPDATE hosts SET name=?, hostname=?, port=?, username=?, ssh_key=?, remote_paths=?, schedule=?, keep_last=? WHERE id=?",
         (data["name"], data["hostname"], data.get("port", 22),
-         data["username"], json.dumps(data["remote_paths"]),
+         data["username"], data.get("ssh_key") or "/root/.ssh/id_ed25519",
+         json.dumps(data["remote_paths"]),
          data.get("schedule") or None, data.get("keep_last", 0), host_id),
     )
     db.commit()
@@ -285,16 +289,17 @@ def test_connection(host_id):
     host = get_db().execute("SELECT * FROM hosts WHERE id = ?", (host_id,)).fetchone()
     if not host:
         return jsonify({"ok": False, "message": "Host not found"}), 404
-    cmd = [
-        "ssh", "-q",
-        "-o", "BatchMode=yes",
-        "-o", "ConnectTimeout=8",
-        "-o", "StrictHostKeyChecking=no",
-        "-o", "UserKnownHostsFile=/dev/null",
-        "-p", str(host["port"]),
-        f"{host['username']}@{host['hostname']}",
-        "echo ok",
+    cmd = ["ssh", "-q",
+           "-o", "BatchMode=yes",
+           "-o", "ConnectTimeout=8",
+           "-o", "StrictHostKeyChecking=no",
+           "-o", "UserKnownHostsFile=/dev/null",
+           "-p", str(host["port"]),
     ]
+    if host["ssh_key"]:
+        cmd += ["-i", host["ssh_key"]]
+    cmd.append(f"{host['username']}@{host['hostname']}")
+    cmd.append("echo ok")
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=12)
         if result.returncode == 0:
@@ -388,6 +393,17 @@ def index():
 # ── Startup ───────────────────────────────────────────────────────────
 
 init_db()
+
+# Migrate: add ssh_key column to existing databases that predate this field
+_mdb = sqlite3.connect(DB_PATH)
+try:
+    _mdb.execute("ALTER TABLE hosts ADD COLUMN ssh_key TEXT NOT NULL DEFAULT '/root/.ssh/id_ed25519'")
+    _mdb.commit()
+except sqlite3.OperationalError:
+    pass  # column already exists
+finally:
+    _mdb.close()
+
 load_schedules()
 
 if __name__ == "__main__":

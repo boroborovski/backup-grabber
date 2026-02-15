@@ -266,6 +266,7 @@ function showHostForm(host) {
   document.getElementById("host-hostname").value = host ? host.hostname : "";
   document.getElementById("host-port").value = host ? host.port : 22;
   document.getElementById("host-username").value = host ? host.username : "";
+  document.getElementById("host-ssh-key").value = host ? (host.ssh_key || "/root/.ssh/id_ed25519") : "/root/.ssh/id_ed25519";
   document.getElementById("host-paths").value = host ? JSON.parse(host.remote_paths).join("\n") : "";
   document.getElementById("host-keep-last").value = host ? (host.keep_last || 0) : 0;
 
@@ -307,6 +308,7 @@ async function saveHost(e) {
     hostname: document.getElementById("host-hostname").value,
     port: parseInt(document.getElementById("host-port").value),
     username: document.getElementById("host-username").value,
+    ssh_key: document.getElementById("host-ssh-key").value.trim() || "/root/.ssh/id_ed25519",
     remote_paths: paths,
     schedule: getScheduleValue(),
     keep_last: parseInt(document.getElementById("host-keep-last").value) || 0,

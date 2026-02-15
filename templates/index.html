@@ -89,6 +89,10 @@
         <input type="text" id="host-username" required placeholder="root">
       </div>
       <div class="field">
+        <label for="host-ssh-key">SSH Key Path <span class="hint">inside the container</span></label>
+        <input type="text" id="host-ssh-key" placeholder="/root/.ssh/id_ed25519">
+      </div>
+      <div class="field">
         <label for="host-paths">Remote Paths <span class="hint">one per line</span></label>
         <textarea id="host-paths" rows="3" required placeholder="/var/backups/&#10;/home/data/exports/"></textarea>
       </div>

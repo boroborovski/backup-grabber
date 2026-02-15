@@ -1,3 +1,7 @@
+// ── App switcher ─────────────────────────────────────────────────────
+document.getElementById("link-cache").href =
+  window.location.protocol + "//" + window.location.hostname + ":5001";
+
 // ── Tab switching ────────────────────────────────────────────────────
 document.querySelectorAll(".nav-btn").forEach(btn => {
   btn.addEventListener("click", () => {

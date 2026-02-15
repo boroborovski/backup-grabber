@@ -6,7 +6,7 @@ services:
     volumes:
       - ./backups:/data/backups
       - app-db:/data
-      - ~/.ssh:/root/.ssh:ro
+      - ./ssh:/root/.ssh:ro
     restart: unless-stopped
 
 volumes:

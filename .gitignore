@@ -1,3 +1,6 @@
+# SSH keys — never commit these
+ssh/
+
 # Auto Claude data directory
 .auto-claude/
 

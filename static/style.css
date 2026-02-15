@@ -121,7 +121,12 @@ main {
 .btn-icon:hover { background: var(--surface2); border-color: var(--border); }
 
 /* ── Host cards ─────────────────────────────────── */
-.card-grid { display: flex; flex-direction: column; gap: .75rem; }
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
 
 .host-card {
   background: var(--surface);
@@ -139,7 +144,7 @@ main {
   margin-bottom: .75rem;
 }
 .host-card-top h3 { font-size: 1.05rem; font-weight: 600; }
-.host-card-actions { display: flex; gap: .35rem; }
+.host-card-actions { display: flex; gap: .35rem; flex-wrap: wrap; }
 
 .host-meta {
   display: flex;
